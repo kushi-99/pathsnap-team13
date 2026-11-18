@@ -4,11 +4,30 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import List, Tuple
 import json
+import os
 
 
 # Workspace paths
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = WORKSPACE_ROOT / "Student folder" / "Student folder"
+
+
+def resolve_data_root() -> Path:
+    """Resolve raw PathSnap dataset root via PATHSNAP_DATA_ROOT or standard fallback paths."""
+    env_override = os.environ.get("PATHSNAP_DATA_ROOT")
+    if env_override:
+        return Path(env_override)
+    candidates = [
+        WORKSPACE_ROOT / "Student folder" / "Student folder",
+        WORKSPACE_ROOT.parent / "Student folder" / "Student folder",
+        WORKSPACE_ROOT / "data",
+    ]
+    for path in candidates:
+        if (path / "train").is_dir() or (path / "student_test").is_dir():
+            return path
+    return candidates[0]
+
+
+DATA_ROOT = resolve_data_root()
 TRAIN_DIR = DATA_ROOT / "train"
 STUDENT_TEST_DIR = DATA_ROOT / "student_test"
 
@@ -17,6 +36,8 @@ ARTIFACTS_DIR = MLP_DIR / "artifacts"
 RESULTS_DIR = MLP_DIR / "results"
 PLOTS_DIR = MLP_DIR / "plots"
 CACHE_DIR = MLP_DIR / "cache"
+COMPARISON_DIR = WORKSPACE_ROOT / "ml" / "comparison"
+BASELINES_ARTIFACTS_DIR = WORKSPACE_ROOT / "artifacts" / "baselines"
 
 API_INTEGRATION_DIR = WORKSPACE_ROOT / "api_integration"
 REPORTS_DIR = WORKSPACE_ROOT / "reports"

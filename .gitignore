@@ -1,4 +1,26 @@
+# Data & large caches (never commit raw datasets or pickle caches)
 data/
+Student folder/
+ml/mlp/cache/
+ml/mlp/results/cv_oof_predictions.pkl
+*.pkl
+
+# Environment & secrets
+.env
+.env.*
 .venv/
+.venv_ui/
+venv/
+
+# Python & testing caches
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Editor / OS artifacts
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
