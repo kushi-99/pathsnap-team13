@@ -1,0 +1,46 @@
+{
+  "partition": "student_test (10 held-out trips)",
+  "model_name": "mlp_128_64_32",
+  "metrics": {
+    "candidate_accuracy": 0.9687964510662418,
+    "precision_macro": 0.9303738882657885,
+    "recall_macro": 0.9075817575759544,
+    "macro_f1": 0.9185623342515932,
+    "precision_positive": 0.8818621725346237,
+    "recall_positive": 0.8289762626790756,
+    "binary_f1_positive": 0.8546018056865652,
+    "log_loss": 0.07793500906079616,
+    "confusion_matrix": [
+      [
+        151647,
+        2124
+      ],
+      [
+        3271,
+        15855
+      ]
+    ],
+    "obs_top1_accuracy": 0.8640918580375783,
+    "obs_top1_accuracy_covered": 0.8656279410226916,
+    "obs_top1_correct": 16556,
+    "total_observations": 19160,
+    "covered_observations": 19126,
+    "candidate_misses": 34,
+    "candidate_miss_rate": 0.0017745302713987473,
+    "threshold": 0.5
+  },
+  "route_continuity": {
+    "obs_step_continuity_overall": 0.9416710182767624,
+    "obs_step_continuity_mean_trip": 0.9412649743209638,
+    "compressed_route_continuity_overall": 0.7926489697419714,
+    "compressed_route_continuity_mean_trip": 0.8015148688087257,
+    "total_obs_transitions": 19150,
+    "continuous_obs_transitions": 18033,
+    "total_compressed_transitions": 5387,
+    "continuous_compressed_transitions": 4270
+  },
+  "inference_time_s": 0.1491,
+  "inference_time_ms": 146.504,
+  "infer_ms_per_trip": 14.65,
+  "infer_ms_per_1k_candidates": 0.8474
+}

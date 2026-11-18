@@ -1,0 +1,32 @@
+{
+  "feature_columns": [
+    "perp_dist_m",
+    "log_perp_dist",
+    "proj_ratio",
+    "is_interior_proj",
+    "dist_to_start_m",
+    "dist_to_end_m",
+    "arc_length_m",
+    "log_arc_length",
+    "cos_heading_diff",
+    "sin_heading_diff_abs",
+    "heading_diff_norm",
+    "heading_valid",
+    "speed_mps",
+    "dt_prev_clipped",
+    "is_time_gap",
+    "prev_obs_dist_m",
+    "next_obs_dist_m",
+    "progress_along_arc",
+    "is_prev_connected",
+    "is_next_connected",
+    "has_reverse_arc",
+    "from_node_deg",
+    "to_node_deg",
+    "dist_rank_norm",
+    "dist_diff_from_min_m",
+    "dist_ratio_to_min",
+    "cos_heading_diff_vs_best",
+    "num_candidates_obs"
+  ]
+}

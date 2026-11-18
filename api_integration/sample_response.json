@@ -1,0 +1,113 @@
+{
+  "trip_id": "00000000",
+  "model_name": "mlp_128_64_32",
+  "num_observations": 2,
+  "num_candidates": 14,
+  "inference_time_ms": 55.559,
+  "predicted_arc_ids": [
+    17630,
+    17630
+  ],
+  "observations": [
+    {
+      "obs_idx": 0,
+      "predicted_arc_id": 17630,
+      "top1_match_prob": 0.970563,
+      "top1_emission_prob": 0.994512,
+      "candidates": [
+        {
+          "arc_id": 17630,
+          "match_prob": 0.970563,
+          "emission_prob": 0.994512,
+          "log_emission_prob": -0.005503
+        },
+        {
+          "arc_id": 17668,
+          "match_prob": 0.004164,
+          "emission_prob": 0.004266,
+          "log_emission_prob": -5.456972
+        },
+        {
+          "arc_id": 17634,
+          "match_prob": 0.000691,
+          "emission_prob": 0.000708,
+          "log_emission_prob": -7.252986
+        },
+        {
+          "arc_id": 17635,
+          "match_prob": 0.000365,
+          "emission_prob": 0.000374,
+          "log_emission_prob": -7.89219
+        },
+        {
+          "arc_id": 17633,
+          "match_prob": 0.0001,
+          "emission_prob": 0.000102,
+          "log_emission_prob": -9.190312
+        },
+        {
+          "arc_id": 212,
+          "match_prob": 3.7e-05,
+          "emission_prob": 3.8e-05,
+          "log_emission_prob": -10.18599
+        }
+      ]
+    },
+    {
+      "obs_idx": 1,
+      "predicted_arc_id": 17630,
+      "top1_match_prob": 0.992421,
+      "top1_emission_prob": 0.972262,
+      "candidates": [
+        {
+          "arc_id": 17630,
+          "match_prob": 0.992421,
+          "emission_prob": 0.972262,
+          "log_emission_prob": -0.02813
+        },
+        {
+          "arc_id": 17668,
+          "match_prob": 0.02523,
+          "emission_prob": 0.024717,
+          "log_emission_prob": -3.700257
+        },
+        {
+          "arc_id": 17634,
+          "match_prob": 0.002494,
+          "emission_prob": 0.002443,
+          "log_emission_prob": -6.014391
+        },
+        {
+          "arc_id": 17635,
+          "match_prob": 0.000365,
+          "emission_prob": 0.000357,
+          "log_emission_prob": -7.93696
+        },
+        {
+          "arc_id": 17633,
+          "match_prob": 0.000112,
+          "emission_prob": 0.00011,
+          "log_emission_prob": -9.113531
+        },
+        {
+          "arc_id": 211,
+          "match_prob": 5.3e-05,
+          "emission_prob": 5.2e-05,
+          "log_emission_prob": -9.87288
+        },
+        {
+          "arc_id": 212,
+          "match_prob": 5e-05,
+          "emission_prob": 4.9e-05,
+          "log_emission_prob": -9.918928
+        },
+        {
+          "arc_id": 17639,
+          "match_prob": 9e-06,
+          "emission_prob": 9e-06,
+          "log_emission_prob": -11.614518
+        }
+      ]
+    }
+  ]
+}
