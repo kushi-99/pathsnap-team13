@@ -1,0 +1,2 @@
+model,candidate_accuracy,candidate_precision,candidate_recall,candidate_macro_f1,candidate_positive_f1,candidate_roc_auc,candidate_log_loss,observation_top1_accuracy_all,observation_top1_accuracy_covered,candidate_miss_rate,fit_seconds,inference_seconds
+random_forest_untuned,0.9096490638967861,0.37726689358852744,0.8770040989985991,0.7388142794750929,0.5275807445903661,0.9526505309250177,0.21333867313048555,0.7223010643689812,0.739428215638458,0.02316269640141916,366.47,4.37
