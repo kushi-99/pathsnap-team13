@@ -1,0 +1,391 @@
+{
+  "schema_version": "2.0.0",
+  "feature_schema": {
+    "num_features": 28,
+    "feature_columns": [
+      "perp_dist_m",
+      "log_perp_dist",
+      "proj_ratio",
+      "is_interior_proj",
+      "dist_to_start_m",
+      "dist_to_end_m",
+      "arc_length_m",
+      "log_arc_length",
+      "cos_heading_diff",
+      "sin_heading_diff_abs",
+      "heading_diff_norm",
+      "heading_valid",
+      "speed_mps",
+      "dt_prev_clipped",
+      "is_time_gap",
+      "prev_obs_dist_m",
+      "next_obs_dist_m",
+      "progress_along_arc",
+      "is_prev_connected",
+      "is_next_connected",
+      "has_reverse_arc",
+      "from_node_deg",
+      "to_node_deg",
+      "dist_rank_norm",
+      "dist_diff_from_min_m",
+      "dist_ratio_to_min",
+      "cos_heading_diff_vs_best",
+      "num_candidates_obs"
+    ]
+  },
+  "dataset_summary": {
+    "train_trips": 80,
+    "train_observations": 208417,
+    "train_candidates": 1779885,
+    "train_candidate_miss_rate": 0.080368,
+    "student_test_trips": 10,
+    "student_test_observations": 19160,
+    "student_test_candidates": 172897,
+    "student_test_candidate_miss_rate": 0.001775,
+    "evaluator_test_used": false
+  },
+  "best_model_id": "mlp_128_64_32",
+  "best_model_selection_criterion": "Highest held-out student_test Observation-Level Top-1 Accuracy (tie-breaker: Macro F1) across identical 28-feature dataset",
+  "models": [
+    {
+      "model_id": "mlp_128_64_32",
+      "display_name": "MLP (128-64-32)",
+      "family": "Neural Network (PyTorch)",
+      "architecture": "28 -> 128 -> 64 -> 32 -> 1 (BatchNorm1d + ReLU + Dropout 0.20, 14,529 params)",
+      "config": {
+        "experiment_name": "mlp_128_64_32",
+        "hidden_dims": [
+          128,
+          64,
+          32
+        ],
+        "dropout": 0.2,
+        "use_batch_norm": true,
+        "learning_rate": 0.001,
+        "weight_decay": 0.0001,
+        "batch_size": 2048,
+        "epochs": 25,
+        "early_stopping_patience": 5,
+        "pos_weight_mode": "none",
+        "n_cv_folds": 5,
+        "random_seed": 42,
+        "feature_columns": [
+          "perp_dist_m",
+          "log_perp_dist",
+          "proj_ratio",
+          "is_interior_proj",
+          "dist_to_start_m",
+          "dist_to_end_m",
+          "arc_length_m",
+          "log_arc_length",
+          "cos_heading_diff",
+          "sin_heading_diff_abs",
+          "heading_diff_norm",
+          "heading_valid",
+          "speed_mps",
+          "dt_prev_clipped",
+          "is_time_gap",
+          "prev_obs_dist_m",
+          "next_obs_dist_m",
+          "progress_along_arc",
+          "is_prev_connected",
+          "is_next_connected",
+          "has_reverse_arc",
+          "from_node_deg",
+          "to_node_deg",
+          "dist_rank_norm",
+          "dist_diff_from_min_m",
+          "dist_ratio_to_min",
+          "cos_heading_diff_vs_best",
+          "num_candidates_obs"
+        ]
+      },
+      "artifact_path": "ml/mlp/artifacts/mlp_model.pt",
+      "num_features": 28,
+      "cv": {
+        "folds": 5,
+        "candidate_accuracy": 0.9622975641684716,
+        "precision_macro": 0.9143536560420337,
+        "recall_macro": 0.883508336195614,
+        "macro_f1": 0.8981375979110209,
+        "macro_f1_std": 0.026910313462116833,
+        "obs_top1_accuracy": 0.7555669643071342,
+        "obs_top1_accuracy_covered": 0.8215968320055096,
+        "log_loss": 0.10916248914574136,
+        "candidate_miss_rate": 0.08036772432191232,
+        "obs_step_continuity": 0.9299692325415073,
+        "compressed_route_continuity": 0.7706840186093298,
+        "cv_train_time_s": 662.291,
+        "final_train_time_s": 95.203
+      },
+      "student_test": {
+        "candidate_accuracy": 0.9687964510662418,
+        "precision_macro": 0.9303738882657885,
+        "recall_macro": 0.9075817575759544,
+        "macro_f1": 0.9185623342515932,
+        "precision_positive": 0.8818621725346237,
+        "recall_positive": 0.8289762626790756,
+        "binary_f1_positive": 0.8546018056865652,
+        "log_loss": 0.07793500906079616,
+        "confusion_matrix": [
+          [
+            151647,
+            2124
+          ],
+          [
+            3271,
+            15855
+          ]
+        ],
+        "obs_top1_accuracy": 0.8640918580375783,
+        "obs_top1_accuracy_covered": 0.8656279410226916,
+        "obs_top1_correct": 16556,
+        "total_observations": 19160,
+        "covered_observations": 19126,
+        "candidate_misses": 34,
+        "candidate_miss_rate": 0.0017745302713987473,
+        "threshold": 0.5,
+        "roc_auc": 0.989494,
+        "pr_auc": 0.937074,
+        "obs_step_continuity": 0.9416710182767624,
+        "compressed_route_continuity": 0.7926489697419714,
+        "inference_time_ms": 146.504,
+        "infer_ms_per_trip": 14.65,
+        "infer_ms_per_1k_candidates": 0.8474
+      }
+    },
+    {
+      "model_id": "hist_gradient_boosting",
+      "display_name": "HistGradientBoosting",
+      "family": "Gradient Boosting",
+      "architecture": "HistGradientBoostingClassifier (150 trees, lr=0.1, max_leaf_nodes=31)",
+      "config": {
+        "max_iter": 150,
+        "learning_rate": 0.1,
+        "max_leaf_nodes": 31,
+        "random_state": 42
+      },
+      "artifact_path": "artifacts/baselines/hist_gradient_boosting.joblib",
+      "num_features": 28,
+      "cv": {
+        "folds": 5,
+        "candidate_accuracy": 0.9591147742691242,
+        "precision_macro": 0.8985531772044618,
+        "recall_macro": 0.8854478465219917,
+        "macro_f1": 0.8918531094126372,
+        "macro_f1_std": 0.043283620106592785,
+        "obs_top1_accuracy": 0.7548232629775882,
+        "obs_top1_accuracy_covered": 0.8207881377597604,
+        "log_loss": 0.22733928151335867,
+        "candidate_miss_rate": 0.08036772432191232,
+        "obs_step_continuity": 0.9192702208441131,
+        "compressed_route_continuity": 0.7487864258935639,
+        "cv_train_time_s": 173.771,
+        "final_train_time_s": 32.489
+      },
+      "student_test": {
+        "candidate_accuracy": 0.9679520176752633,
+        "precision_macro": 0.9253514707596681,
+        "recall_macro": 0.9090298558534854,
+        "macro_f1": 0.9169758824338237,
+        "precision_positive": 0.8713168971737824,
+        "recall_positive": 0.8333681898985674,
+        "binary_f1_positive": 0.8519201475186403,
+        "log_loss": 0.07950956039206179,
+        "confusion_matrix": [
+          [
+            151417,
+            2354
+          ],
+          [
+            3187,
+            15939
+          ]
+        ],
+        "obs_top1_accuracy": 0.8603862212943633,
+        "obs_top1_accuracy_covered": 0.861915716825264,
+        "obs_top1_correct": 16485,
+        "total_observations": 19160,
+        "covered_observations": 19126,
+        "candidate_misses": 34,
+        "candidate_miss_rate": 0.0017745302713987473,
+        "threshold": 0.5,
+        "roc_auc": 0.989434,
+        "pr_auc": 0.932481,
+        "obs_step_continuity": 0.9386945169712794,
+        "compressed_route_continuity": 0.7859226841721372,
+        "inference_time_ms": 844.701,
+        "infer_ms_per_trip": 84.47,
+        "infer_ms_per_1k_candidates": 4.8856
+      }
+    },
+    {
+      "model_id": "random_forest",
+      "display_name": "Random Forest",
+      "family": "Bagging / Ensemble",
+      "architecture": "RandomForestClassifier (80 trees, max_depth=14, min_samples_leaf=10, max_samples=0.30)",
+      "config": {
+        "n_estimators": 80,
+        "max_depth": 14,
+        "min_samples_leaf": 10,
+        "max_samples": 0.3,
+        "random_state": 42,
+        "n_jobs": -1
+      },
+      "artifact_path": "artifacts/baselines/random_forest.joblib",
+      "num_features": 28,
+      "cv": {
+        "folds": 5,
+        "candidate_accuracy": 0.9632290850251561,
+        "precision_macro": 0.9186834356278784,
+        "recall_macro": 0.8837183381315777,
+        "macro_f1": 0.9001898836305353,
+        "macro_f1_std": 0.027103943341165553,
+        "obs_top1_accuracy": 0.754890436000902,
+        "obs_top1_accuracy_covered": 0.8208611811109894,
+        "log_loss": 0.11258725978823603,
+        "candidate_miss_rate": 0.08036772432191232,
+        "obs_step_continuity": 0.9337611658034819,
+        "compressed_route_continuity": 0.7749180408083378,
+        "cv_train_time_s": 552.883,
+        "final_train_time_s": 147.947
+      },
+      "student_test": {
+        "candidate_accuracy": 0.9687328293724009,
+        "precision_macro": 0.9286880674999454,
+        "recall_macro": 0.9093543661099884,
+        "macro_f1": 0.9187217815770592,
+        "precision_positive": 0.8780030857394754,
+        "recall_positive": 0.833106765659312,
+        "binary_f1_positive": 0.8549659279927027,
+        "log_loss": 0.07792257850638679,
+        "confusion_matrix": [
+          [
+            151557,
+            2214
+          ],
+          [
+            3192,
+            15934
+          ]
+        ],
+        "obs_top1_accuracy": 0.8588726513569938,
+        "obs_top1_accuracy_covered": 0.8603994562375823,
+        "obs_top1_correct": 16456,
+        "total_observations": 19160,
+        "covered_observations": 19126,
+        "candidate_misses": 34,
+        "candidate_miss_rate": 0.0017745302713987473,
+        "threshold": 0.5,
+        "roc_auc": 0.98969,
+        "pr_auc": 0.937008,
+        "obs_step_continuity": 0.934934725848564,
+        "compressed_route_continuity": 0.7748057111874209,
+        "inference_time_ms": 685.778,
+        "infer_ms_per_trip": 68.578,
+        "infer_ms_per_1k_candidates": 3.9664
+      }
+    },
+    {
+      "model_id": "logistic_regression",
+      "display_name": "Logistic Regression",
+      "family": "Linear / Probabilistic",
+      "architecture": "StandardScaler -> LogisticRegression (L2, lbfgs, max_iter=1000)",
+      "config": {
+        "C": 1.0,
+        "max_iter": 1000,
+        "solver": "lbfgs",
+        "class_weight": null,
+        "random_state": 42
+      },
+      "artifact_path": "artifacts/baselines/logistic_regression.joblib",
+      "num_features": 28,
+      "cv": {
+        "folds": 5,
+        "candidate_accuracy": 0.9577354716737317,
+        "precision_macro": 0.8976664931514023,
+        "recall_macro": 0.877391921365693,
+        "macro_f1": 0.8871731330596686,
+        "macro_f1_std": 0.025053936435626194,
+        "obs_top1_accuracy": 0.745265501374648,
+        "obs_top1_accuracy_covered": 0.8103951123563263,
+        "log_loss": 0.15348195734797518,
+        "candidate_miss_rate": 0.08036772432191232,
+        "obs_step_continuity": 0.9191598227871189,
+        "compressed_route_continuity": 0.7606242360499161,
+        "cv_train_time_s": 92.113,
+        "final_train_time_s": 22.565
+      },
+      "student_test": {
+        "candidate_accuracy": 0.964695743708682,
+        "precision_macro": 0.9155072986360262,
+        "recall_macro": 0.902506590301214,
+        "macro_f1": 0.9088673424979107,
+        "precision_positive": 0.8529762550146374,
+        "recall_positive": 0.8226497960890934,
+        "binary_f1_positive": 0.8375385925689343,
+        "log_loss": 0.10423264862983393,
+        "confusion_matrix": [
+          [
+            151059,
+            2712
+          ],
+          [
+            3392,
+            15734
+          ]
+        ],
+        "obs_top1_accuracy": 0.8581419624217119,
+        "obs_top1_accuracy_covered": 0.859667468367667,
+        "obs_top1_correct": 16442,
+        "total_observations": 19160,
+        "covered_observations": 19126,
+        "candidate_misses": 34,
+        "candidate_miss_rate": 0.0017745302713987473,
+        "threshold": 0.5,
+        "roc_auc": 0.979476,
+        "pr_auc": 0.887724,
+        "obs_step_continuity": 0.9306527415143603,
+        "compressed_route_continuity": 0.7644136952279581,
+        "inference_time_ms": 66.676,
+        "infer_ms_per_trip": 6.668,
+        "infer_ms_per_1k_candidates": 0.3856
+      }
+    }
+  ],
+  "teammate_branch_status": [
+    {
+      "branch": "origin/kushi/data-foundation",
+      "owner": "Kushi",
+      "models": [
+        "logistic_regression (6-feature)",
+        "knn (6-feature, 100k subsample)"
+      ],
+      "status": "Evaluated on separate 6-feature 64/16 holdout split (not 28-feature student_test); kept separate to avoid comparing incompatible feature sets.",
+      "reported_holdout_metrics": {
+        "logistic_regression_6feat": {
+          "covered_candidate_accuracy": 0.8647,
+          "covered_macro_f1": 0.6802,
+          "log_loss": 0.2728,
+          "obs_top1_all": 0.7285
+        },
+        "knn_6feat": {
+          "covered_candidate_accuracy": 0.888,
+          "covered_macro_f1": 0.7057,
+          "log_loss": 1.5288,
+          "obs_top1_all": 0.6357
+        }
+      }
+    },
+    {
+      "branch": "origin/kritika-hgb-hmm",
+      "owner": "Kritika",
+      "models": [
+        "HistGradientBoosting (6-feature tuning scripts)",
+        "HMM/Viterbi (pending)"
+      ],
+      "status": "Training and Bayesian tuning scripts committed on branch; no trained model artifact, evaluation metrics, or HMM decoder committed yet.",
+      "reported_holdout_metrics": null
+    }
+  ]
+}
