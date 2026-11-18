@@ -29,10 +29,10 @@ Accordingly, PathSnap formulates map-matching as **binary candidate road-segment
 ## 3. Project Objectives
 
 1. Perform rigorous, leak-free raw dataset exploration, candidate generation, monotonic route alignment, and 28-feature engineering.
-2. Train, cross-validate, and compare multiple distinct ML algorithm families on identical 80-trip `train` (5-fold trip-grouped `GroupKFold`) and 10-trip held-out `student_test` partitions.
+2. Train, cross-validate, and compare multiple distinct ML algorithm families on identical 80-trip `train` (5-fold trip-grouped `GroupKFold`) and 10-trip `student_test` development-evaluation partitions while keeping `evaluator_test` untouched.
 3. Build a modular, startup-loaded **FastAPI + Uvicorn** inference and server-side evaluation backend (Laptop 1).
 4. Build a complete **5-page Streamlit + Folium** evaluator application (Laptop 2) supporting dynamic trip selection, multi-model inference, interactive route visualization, and downloadable diagnostics.
-5. Verify end-to-end functionality across two networked laptops with automated integration tests and reproducible documentation.
+5. Verify distributed client-server communication through automated integration tests and live localhost HTTP probes, and provide complete two-laptop network deployment documentation ready for physical two-machine execution.
 
 ---
 
@@ -129,12 +129,15 @@ Implemented in `ml/mlp/model.py` (`PathSnapMLP`):
 
 ---
 
-## 11. Cross-Validation Methodology
+## 11. Cross-Validation Methodology & Partition Discipline
 
-Strict leakage prevention is enforced across every model:
-- **Trip-Grouped Splitting:** 5-fold `GroupKFold` grouped strictly by `trip_id` across the 80 `train` trips with runtime assertion `set(train_trips).isdisjoint(set(val_trips))`.
+Leakage prevention and partition roles are explicitly separated across training, development comparison, and final evaluation:
+- **Trip-Grouped Cross-Validation (80 `train` trips):** 5-fold `GroupKFold` grouped strictly by `trip_id` across the 80 `train` trips with runtime assertion `set(train_trips).isdisjoint(set(val_trips))`.
 - **In-Fold Preprocessing:** `StandardScaler` is fitted strictly inside each training fold before transforming validation folds.
-- **Held-Out Discipline:** The 10 `student_test` trips are never touched during scaling, early stopping, or architecture selection. The 10 `evaluator_test` trips are never accessed.
+- **Role of `student_test` (10 development-stage comparison trips):** Two distinct stages must be separated clearly:
+  1. *Pre-`student_test` MLP architecture selection (`ml/mlp/train_mlp.py`):* Feature scaling (`StandardScaler`), early stopping, and selecting `mlp_128_64_32` over `mlp_128_64` used strictly 5-fold `GroupKFold` CV on the 80 `train` trips without touching `student_test`.
+  2. *Cross-family model comparison (`ml/comparison/run_model_comparison.py`):* Across the four algorithm families (`mlp_128_64_32`, `hist_gradient_boosting`, `random_forest`, `logistic_regression`), **`student_test` became a development-stage comparison set** because `student_test` Observation-Level Top-1 Accuracy (with Macro-F1 tie-breaker) was used to rank the four families and set `best_model_id`. Therefore, `student_test` metrics for the cross-family winner are **development-stage comparison results**, not an independent or unbiased final test evaluation.
+- **Strict Isolation of `evaluator_test` (10 reserved trips):** Verified from code, workspace inspection, and `ml/comparison/model_comparison_summary.json` (`"evaluator_test_used": false`), the `evaluator_test` partition remains strictly reserved and was never accessed at any stage. True unbiased final evaluation of the selected model can only be obtained on `evaluator_test`.
 
 ---
 
@@ -150,7 +153,7 @@ We report **both** candidate-level classification metrics and route-matching met
 
 ## 13. Actual Experimental Results (MLP `mlp_128_64_32`)
 
-| Metric | 5-Fold GroupKFold CV (80 Train Trips, OOF) | Student-Test (10 Held-Out Trips) |
+| Metric | 5-Fold GroupKFold CV (80 Train Trips, OOF) | Student-Test (10 Dev-Eval Trips) |
 |---|---:|---:|
 | Candidate Accuracy | 0.9623 | **0.9688** |
 | Macro Precision / Macro Recall | 0.9144 / 0.8835 | **0.9304 / 0.9076** |
@@ -162,7 +165,18 @@ We report **both** candidate-level classification metrics and route-matching met
 | **ROC-AUC / PR-AUC (Average Precision)** | — | **0.9895 / 0.9371** |
 | Candidate Miss Rate | 8.04% (median trip: 0.00%) | **0.18%** (`34 / 19,160`) |
 | Route Continuity (Obs-Step / Compressed) | 0.9300 / 0.7707 | **0.9417 / 0.7926** |
-| Inference Latency | 0.340 ms / 1k cands | **14.65 ms / trip** (146.5 ms total) |
+| Inference Latency (Total / Per Trip / Per 1k Cands) | 605.4 ms / 7.57 ms / 0.3401 ms *(forward pass only)* | **146.504 ms / 14.65 ms / 0.8474 ms** *(full predictor)* |
+
+### 13.1 MLP Inference Latency Breakdown & Measurement Scope
+
+To eliminate ambiguity between CV and `student_test` latency numbers reported across saved evaluation artifacts, the exact measurement scopes are separated below:
+
+| Source Artifact | Scope Measured | Partition / Volume | Total Time (ms) | Avg per Trip (ms/trip) | Normalized (ms / 1k candidates) |
+|---|---|---|---:|---:|---:|
+| `ml/mlp/results/cv_selected_summary.json` (`train_mlp.py`) | Pure PyTorch forward pass (`model.predict_proba_numpy`) on pre-scaled `float32` validation arrays | 5-Fold CV (`80` trips, `1,779,885` candidates) | 605.400 | 7.568 | 0.3401 |
+| `ml/mlp/results/student_test_metrics.json` (`predict.py` / `evaluate_mlp.py`) | Full `MLPPredictor.predict_scores()` pipeline: DataFrame extraction, finiteness checks, `StandardScaler.transform()`, PyTorch forward pass + sigmoid, and per-observation emission normalization | `student_test` (`10` trips, `172,897` candidates) | **146.504** | **14.650** | **0.8474** |
+
+The normalized `student_test` latency (**0.8474 ms per 1,000 candidates**, `146.504 ms` total across all 10 trips, `14.65 ms/trip`, outer wall-clock `0.1491 s`) is higher than the CV timing (`0.3401 ms per 1,000 candidates`) because `student_test_metrics.json` measures the complete end-to-end production scoring wrapper (`MLPPredictor.predict_scores`), whereas `cv_selected_summary.json` isolates only the PyTorch batched forward pass on already-standardized arrays.
 
 **Per-Trip Student-Test Breakdown (`mlp_128_64_32`):**
 
@@ -183,16 +197,29 @@ We report **both** candidate-level classification metrics and route-matching met
 
 ## 14. Multi-Model Comparison
 
-### 14.1 Apples-to-Apples 28-Feature Comparison (10 Held-Out Student-Test Trips)
+### 14.1 Apples-to-Apples 28-Feature Comparison (5-Fold CV & 10 Student-Test Trips)
 
-| Model | Algorithm Family | CV Macro F1 | Student-Test Cand Acc | Student-Test Macro F1 | Student-Test Obs Top-1 | Log Loss | ROC-AUC | PR-AUC | Obs Continuity | Infer (ms/trip) |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| **MLP (128-64-32)** | Neural Network | 0.8981 | **0.9688** | 0.9186 | **0.8641** | **0.0779** | 0.9895 | **0.9371** | **0.9417** | 14.65 ms |
-| **HistGradientBoosting** | Gradient Boosting | 0.8919 | 0.9680 | 0.9170 | 0.8604 | 0.0795 | 0.9894 | 0.9325 | 0.9387 | 84.47 ms |
-| **Random Forest** | Bagging Ensemble | **0.9002** | 0.9687 | **0.9187** | 0.8589 | **0.0779** | **0.9897** | 0.9370 | 0.9349 | 68.58 ms |
-| **Logistic Regression** | Linear / Prob. | 0.8872 | 0.9647 | 0.9089 | 0.8581 | 0.1042 | 0.9795 | 0.8877 | 0.9307 | **6.67 ms** |
+All values below match `ml/comparison/model_comparison_table.csv` exactly, preserving the distinction between candidate-level classification metrics (`172,897` candidate pairs) and observation-level Top-1 map-matching accuracy (`19,160` GPS observations):
 
-**Technical Selection Reasoning:** `MLP (128-64-32)` achieves the **highest Observation-Level Top-1 Accuracy (`86.41%`)**, **highest PR-AUC (`0.9371`)**, **highest Candidate Accuracy (`96.88%`)**, **highest Route Continuity (`94.17%` step / `79.26%` compressed)**, tied-best **Log Loss (`0.0779`)**, superior robustness under Fold 1 distribution shift (`0.1466` vs `0.7300` for HistGradientBoosting), and **5.8× faster CPU inference** than HistGradientBoosting with a `67.9 KB` artifact.
+| Model | Family | CV Macro F1 | CV Obs Top-1 | CV Log Loss | Test Cand Acc | Test Macro F1 | Test Obs Top-1 | Test Log Loss | ROC-AUC | PR-AUC | Obs Cont. | Test Infer (ms/trip) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| **MLP (128-64-32)** | Neural Net | 0.8981 | **0.7556** | **0.1092** | **0.9688** | 0.9186 | **0.8641** | **0.0779** | 0.9895 | **0.9371** | **0.9417** | 14.650 |
+| **HistGradientBoosting** | Boosting | 0.8919 | 0.7548 | 0.2273 | 0.9680 | 0.9170 | 0.8604 | 0.0795 | 0.9894 | 0.9325 | 0.9387 | 84.470 |
+| **Random Forest** | Ensemble | **0.9002** | 0.7549 | 0.1126 | 0.9687 | **0.9187** | 0.8589 | **0.0779** | **0.9897** | 0.9370 | 0.9349 | 68.578 |
+| **Logistic Regression** | Linear | 0.8872 | 0.7453 | 0.1535 | 0.9647 | 0.9089 | 0.8581 | 0.1042 | 0.9795 | 0.8877 | 0.9307 | **6.668** |
+
+**Four-Model `student_test` Inference Latency Summary (10 Trips, 172,897 Candidates):**
+
+| Model | Total Time (ms) | Avg per Trip (ms/trip) | Normalized (ms / 1k candidates) | Measurement Scope |
+|---|---:|---:|---:|---|
+| **MLP (128-64-32)** | 146.504 | 14.650 | 0.8474 | Full `MLPPredictor.predict_scores()` (DataFrame checks + `StandardScaler` + PyTorch forward pass + emission normalization) |
+| **Logistic Regression** | 66.676 | 6.668 | 0.3856 | `Pipeline.predict_proba(X_test)` (`StandardScaler` + linear scoring) |
+| **Random Forest** | 685.778 | 68.578 | 3.9664 | `RandomForestClassifier.predict_proba(X_test)` (80 trees, `n_jobs=-1`) |
+| **HistGradientBoosting** | 844.701 | 84.470 | 4.8856 | `HistGradientBoostingClassifier.predict_proba(X_test)` (150 trees) |
+
+**Model-Selection Process & Honest Partition Disclosure:**
+- **Pre-`student_test` MLP architecture selection (`ml/mlp/train_mlp.py`):** Choosing `mlp_128_64_32` over `mlp_128_64` used strictly 5-fold `GroupKFold` CV on the 80 training trips (CV Top-1 `0.7556` vs `0.7548`) prior to any `student_test` evaluation.
+- **Cross-family comparison & ranking (`ml/comparison/run_model_comparison.py`):** On 5-fold `GroupKFold` CV alone (80 `train` trips), **Random Forest achieved the highest CV Macro-F1 (`0.9002`)** compared to **MLP (`0.8981`)**, while **MLP achieved the highest CV Observation-Level Top-1 Accuracy (`0.7556` vs Random Forest `0.7549`, HistGradientBoosting `0.7548`, Logistic Regression `0.7453`)** and the lowest CV Log Loss (`0.1092` vs Random Forest `0.1126`). During cross-family comparison, `run_model_comparison.py` explicitly used **`student_test` as a development-stage comparison set**, ranking `best_model_id` by `student_test` Observation-Level Top-1 Accuracy (with Macro-F1 tie-breaker). Because `student_test` directly informed cross-family ranking, its reported scores for `MLP (128-64-32)` (`0.8641` Top-1, `0.9186` Macro-F1, `0.9371` PR-AUC, `14.650 ms/trip`) are **development-stage comparison metrics rather than an independent final test evaluation** (with Random Forest closely competitive on candidate-level Macro-F1 `0.9187` / CV `0.9002` and ROC-AUC `0.9897`). Independent final evaluation remains reserved for the unaccessed `evaluator_test` partition.
 
 ### 14.2 Separate Teammate Branch Status (Non-Equivalent Feature Sets)
 
@@ -241,7 +268,7 @@ Implemented in `api/` (`main.py`, `schemas.py`, `model_registry.py`, `trip_servi
 Fully documented in `docs/TWO_LAPTOP_SETUP.md`:
 - Laptop 1 binds Uvicorn to `0.0.0.0:8000` with Windows Firewall inbound TCP rule on port `8000` and `PATHSNAP_DATA_ROOT` pointing to the dataset folder.
 - Laptop 2 runs its own independent Python environment (`streamlit`, `folium`, `requests`) and sets `$env:PATHSNAP_API_URL = "http://<LAPTOP_1_IP>:8000"` (also editable at runtime in the Streamlit sidebar).
-- Verified via `pytest` automated tests (`tests/test_pathsnap_review2.py`) and live HTTP server smoke probes.
+- **Verification Scope:** Automated `pytest` tests (`tests/test_pathsnap_review2.py`, 8/8 passing) and live Uvicorn + Streamlit HTTP smoke probes verified the full client-server API contract on **localhost on a single workstation**. Physical end-to-end testing across **two separate networked laptops has not yet been executed** and remains a pre-demonstration validation step.
 
 ---
 
@@ -271,8 +298,9 @@ All charts below were generated directly from executed experimental outputs:
 
 ## 21. Limitations
 
+- **Physical two-laptop LAN testing not yet completed:** While the FastAPI server (`0.0.0.0:8000`), configurable `PATHSNAP_API_URL` client, CORS middleware, and Streamlit frontend were verified via automated tests and live localhost HTTP probes, end-to-end execution across two separate physical laptops over a live Wi-Fi/LAN network has not yet been performed.
+- **HMM/Viterbi sequential decoding pending integration:** The inference API already emits normalized `emission_prob` and `log_emission_prob` per `(obs_idx, arc_id)`, awaiting integration of the team's finalized HMM/Viterbi sequential decoder.
 - **Classifier-only sequence discontinuities:** Independent observation-level Top-1 decoding yields `79.26%` compressed route continuity on `student_test` (vs `99.97%` in `.route`), especially on dense parallel street grids such as Trip `00000077` (`69.88%` Top-1 despite `0.00%` candidate miss rate).
-- **HMM/Viterbi decoder pending integration:** The inference API already emits normalized `emission_prob` and `log_emission_prob` per `(obs_idx, arc_id)`, awaiting the team's finalized HMM/Viterbi module.
 - **Fixed-radius misses on extreme drift:** Observations displaced $>150\text{ m}$ from the true corridor (`00000054`, `00000033`) cannot be recovered by local spatial candidate search alone.
 
 ---
@@ -288,7 +316,7 @@ All charts below were generated directly from executed experimental outputs:
 
 ## 23. Conclusion
 
-PathSnap Review 2 delivers a complete, verified, end-to-end distributed map-matching platform inside `pathsnap-team13`. Across four distinct ML families evaluated on identical 28-feature partitions, **`MLP (128-64-32)`** achieves the strongest route-matching performance (**86.41% Observation-Level Top-1 Accuracy**, **96.88% Candidate Accuracy**, **91.86% Macro F1**, **0.0779 Log Loss**, **0.9895 ROC-AUC**, **0.9371 PR-AUC**, **14.65 ms/trip** CPU inference). Combined with the startup-loaded FastAPI backend, 5-page Streamlit + Folium evaluator dashboard, automated `pytest` verification suite, and two-laptop network deployment guide, the system is ready for live Review 2 demonstration and seamless HMM/Viterbi plug-in.
+PathSnap Review 2 delivers an integrated, localhost-verified distributed map-matching platform inside `pathsnap-team13`. Across four distinct ML families evaluated on identical 28-feature partitions, **`MLP (128-64-32)`** ranked first in development-stage comparison on Observation-Level Top-1 Accuracy (**0.7556** 5-fold CV / **86.41%** `student_test`), Candidate Accuracy (**96.88%**), PR-AUC (**0.9371**), Route Continuity (**94.17%** step / **79.26%** compressed), and end-to-end CPU efficiency (**146.504 ms** total / **14.65 ms/trip** / **0.8474 ms per 1k candidates**), while **Random Forest** achieved the highest 5-fold CV Macro-F1 (**0.9002** vs MLP **0.8981**) and `student_test` Macro-F1 (**0.9187**). Because `student_test` was used as a development-stage comparison set to rank the four model families, these `student_test` numbers should not be interpreted as an unbiased final test evaluation of the selected winner; independent final evaluation remains reserved for the unaccessed `evaluator_test` partition. Combined with the startup-loaded FastAPI backend, 5-page Streamlit + Folium evaluator dashboard, automated `pytest` verification suite, and two-laptop network deployment guide, the core software stack is verified on localhost and prepared for physical two-laptop LAN validation and downstream HMM/Viterbi integration.
 
 ---
 
@@ -296,7 +324,7 @@ PathSnap Review 2 delivers a complete, verified, end-to-end distributed map-matc
 
 - **Person 4 — Kruthik Reddy (This Branch — `feat/kruthik-reddy-mlp-baseline`):**
   - Designed and implemented the 28-feature local tangent-plane candidate generator, monotonic DP label aligner, and leak-free PyTorch MLP baseline pipeline (`ml/mlp/`).
-  - Executed unified apples-to-apples 4-model training, 5-fold GroupKFold CV, held-out `student_test` evaluation, ROC/PR curve computation, and comparative visualizations (`ml/comparison/`).
+  - Executed unified apples-to-apples 4-model training, 5-fold GroupKFold CV, `student_test` development-stage comparison, ROC/PR curve computation, and comparative visualizations (`ml/comparison/`).
   - Architected and built the complete Laptop 1 FastAPI + Uvicorn backend (`api/`), including startup `ModelRegistry`, `TripService`, Pydantic v2 schemas, and server-side evaluation guard.
   - Developed the complete 5-page Laptop 2 Streamlit Evaluator Dashboard and multi-layer Folium route visualization (`ui/evaluator_dashboard/`).
   - Authored `REVIEW2_IMPLEMENTATION_AUDIT.md`, `docs/TWO_LAPTOP_SETUP.md`, `api_integration/FASTAPI_MLP_INTEGRATION.md`, `README.md`, automated `pytest` suite (`tests/`), and this consolidated Review 2 Technical Report (Markdown + PDF).

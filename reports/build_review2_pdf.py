@@ -237,13 +237,13 @@ def build_pdf() -> Path:
             ),
             (
                 REPO_ROOT / "ml" / "mlp" / "plots" / "student_test_per_trip_comparison.png",
-                "Figure 4: Per-trip MLP Observation-Level Top-1 Accuracy and Route Continuity across all 10 held-out student-test trips.",
+                "Figure 4: Per-trip MLP Observation-Level Top-1 Accuracy and Route Continuity across all 10 student-test development-comparison trips.",
             ),
         ],
         "## 14. Multi-Model Comparison": [
             (
                 REPO_ROOT / "ml" / "comparison" / "plots" / "multi_model_comparison.png",
-                "Figure 5: Unified 4-model comparison on the 10 held-out student-test trips (28 features): Classification/Top-1 scores (left) and Log Loss vs inference latency (right).",
+                "Figure 5: Unified 4-model comparison on the 10 student-test development-comparison trips (28 features): Classification/Top-1 scores (left) and Log Loss vs inference latency (right).",
             ),
             (
                 REPO_ROOT / "ml" / "comparison" / "plots" / "multi_model_roc_pr.png",
