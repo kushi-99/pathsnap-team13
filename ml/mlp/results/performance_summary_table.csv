@@ -1,0 +1,16 @@
+Metric,5-Fold GroupKFold CV (80 Train Trips),Student-Test (10 Held-Out Trips)
+Candidate Accuracy,0.9623,0.9688
+Macro Precision,0.9144,0.9304
+Macro Recall,0.8835,0.9076
+Macro F1-Score,0.8981,0.9186
+Positive-Class Precision,0.8546,0.8819
+Positive-Class Recall,0.7831,0.8290
+Positive-Class F1-Score,0.8173,0.8546
+Observation-Level Top-1 Accuracy (All Obs),0.7556,0.8641
+Observation-Level Top-1 Accuracy (Covered Obs),0.8216,0.8656
+Log Loss (Binary Cross-Entropy),0.1092,0.0779
+Candidate Miss Rate,8.04%,0.18%
+"Route Continuity (Obs-Step, Classifier-Only)",0.9300,0.9417
+"Route Continuity (Compressed, Classifier-Only)",0.7707,0.7926
+Training Time (s),662.29 (5-fold) / 95.20 (final),N/A (inference only)
+Inference Time (ms / 1k candidates),0.340,0.847
