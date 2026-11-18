@@ -3,4 +3,5 @@ pandas
 scikit-learn
 scipy
 pyproj
-matplotlibjoblib
+matplotlib
+joblib
