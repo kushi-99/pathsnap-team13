@@ -1,231 +1,165 @@
-
-"""Baseline machine-learning training and comparison for PathSnap."""
-
+import argparse
+import time
 from pathlib import Path
-from typing import Any, Dict, List
 
-import json
 import joblib
 import numpy as np
 import pandas as pd
-
-from sklearn.base import clone
-from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    precision_score,
-    recall_score,
-)
-from sklearn.model_selection import GroupKFold
-from sklearn.pipeline import Pipeline
+from sklearn.metrics import accuracy_score, f1_score, log_loss
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from .features import prepare_feature_matrix
-from .labels import extract_labels
+from .features import FEATURE_COLUMNS
 
 
-def build_baseline_models() -> Dict[str, Pipeline]:
-    """Create the baseline classifiers."""
+def balanced_training_sample(frame, max_rows, random_state=42):
+    """Cap KNN training size with equal samples from the two label classes."""
+    if len(frame) <= max_rows:
+        return frame
 
-    return {
-        "logistic_regression": Pipeline([
-            ("scaler", StandardScaler()),
-            ("classifier", LogisticRegression(
-                max_iter=1000,
-                class_weight="balanced",
-                random_state=42,
-            )),
-        ]),
+    rng = np.random.default_rng(random_state)
+    chosen = []
+    per_class = max_rows // 2
+    labels = frame["label"].to_numpy()
 
-        "random_forest": Pipeline([
-            ("scaler", StandardScaler()),
-            ("classifier", RandomForestClassifier(
-                n_estimators=200,
-                max_depth=None,
-                min_samples_leaf=2,
-                class_weight="balanced",
-                random_state=42,
-                n_jobs=-1,
-            )),
-        ]),
+    for label in (0, 1):
+        positions = np.flatnonzero(labels == label)
+        count = min(len(positions), per_class)
+        if count:
+            chosen.extend(rng.choice(positions, size=count, replace=False).tolist())
 
-        "hist_gradient_boosting": Pipeline([
-            ("scaler", StandardScaler()),
-            ("classifier", HistGradientBoostingClassifier(
-                max_iter=150,
-                learning_rate=0.1,
-                max_leaf_nodes=31,
-                random_state=42,
-            )),
-        ]),
+    return frame.iloc[np.sort(np.asarray(chosen, dtype=int))]
+
+
+def evaluate_model(name, model, eligible_frame, all_frame, output_dir,
+                   max_knn_rows=None):
+    """Use one trip-grouped split; score candidates and all route observations."""
+    groups = eligible_frame["trip_id"].astype(str)
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    train_idx, validation_idx = next(
+        splitter.split(eligible_frame[FEATURE_COLUMNS], eligible_frame["label"], groups)
+    )
+
+    train_frame = eligible_frame.iloc[train_idx]
+    validation_frame = eligible_frame.iloc[validation_idx]
+    if max_knn_rows is not None:
+        train_frame = balanced_training_sample(train_frame, max_knn_rows)
+
+    fit_start = time.perf_counter()
+    model.fit(train_frame[FEATURE_COLUMNS], train_frame["label"].astype(int))
+    fit_seconds = time.perf_counter() - fit_start
+
+    infer_start = time.perf_counter()
+    covered_prob = model.predict_proba(validation_frame[FEATURE_COLUMNS])[:, 1]
+    covered_pred = (covered_prob >= 0.5).astype(int)
+    y_true = validation_frame["label"].astype(int).to_numpy()
+
+    validation_trip_ids = sorted(
+        validation_frame["trip_id"].astype(str).unique().tolist()
+    )
+    all_validation = all_frame[
+        all_frame["trip_id"].astype(str).isin(validation_trip_ids)
+    ].copy()
+    all_prob = model.predict_proba(all_validation[FEATURE_COLUMNS])[:, 1]
+    inference_seconds = time.perf_counter() - infer_start
+
+    scored = all_validation[[
+        "trip_id", "observation_index", "candidate_arc_id", "reference_arc_id", "label"
+    ]].copy()
+    scored["score"] = all_prob
+    top = scored.loc[
+        scored.groupby(["trip_id", "observation_index"])["score"].idxmax()
+    ]
+    all_obs = all_validation.groupby(
+        ["trip_id", "observation_index"]
+    )["label"].max()
+    covered_count = int((all_obs == 1).sum())
+
+    covered_scored = validation_frame[[
+        "trip_id", "observation_index", "candidate_arc_id", "reference_arc_id"
+    ]].copy()
+    covered_scored["score"] = covered_prob
+    covered_top = covered_scored.loc[
+        covered_scored.groupby(["trip_id", "observation_index"])["score"].idxmax()
+    ]
+
+    metrics = {
+        "model": name,
+        "candidate_accuracy_on_covered_observations": accuracy_score(y_true, covered_pred),
+        "candidate_macro_f1_on_covered_observations": f1_score(
+            y_true, covered_pred, average="macro", zero_division=0
+        ),
+        "candidate_log_loss_on_covered_observations": log_loss(
+            y_true, covered_prob, labels=[0, 1]
+        ),
+        "observation_top1_accuracy_all": float(
+            (top["candidate_arc_id"].to_numpy()
+             == top["reference_arc_id"].to_numpy()).mean()
+        ),
+        "observation_top1_accuracy_when_reference_candidate_present": float(
+            (covered_top["candidate_arc_id"].to_numpy()
+             == covered_top["reference_arc_id"].to_numpy()).mean()
+        ),
+        "validation_candidate_miss_rate": float((all_obs == 0).mean()),
+        "validation_observations": len(all_obs),
+        "validation_observations_with_reference_candidate": covered_count,
+        "fit_rows": len(train_frame),
+        "fit_trips": int(train_frame["trip_id"].nunique()),
+        "validation_trips": len(validation_trip_ids),
+        "validation_trip_ids": ",".join(validation_trip_ids),
+        "fit_seconds": fit_seconds,
+        "validation_inference_seconds": inference_seconds,
     }
-
-
-def calculate_metrics(
-    actual: np.ndarray,
-    predicted: np.ndarray,
-) -> Dict[str, float]:
-    """Calculate classification performance metrics."""
-
-    return {
-        "accuracy": float(accuracy_score(actual, predicted)),
-        "macro_precision": float(
-            precision_score(actual, predicted, average="macro", zero_division=0)
-        ),
-        "macro_recall": float(
-            recall_score(actual, predicted, average="macro", zero_division=0)
-        ),
-        "macro_f1": float(
-            f1_score(actual, predicted, average="macro", zero_division=0)
-        ),
-        "positive_f1": float(
-            f1_score(actual, predicted, pos_label=1, zero_division=0)
-        ),
-    }
-
-
-def train_and_compare(
-    candidates: pd.DataFrame,
-    output_dir: Path = Path("artifacts/baselines"),
-    n_splits: int = 5,
-) -> pd.DataFrame:
-    """
-    Perform trip-grouped cross-validation and train final baseline models.
-
-    Each trip remains entirely within one CV fold.
-    Final models are fitted on the supplied training candidates only.
-
-    The caller must not pass student_test or evaluator_test data here.
-    """
-
-    required = {"trip_id", "label"}
-
-    missing = required.difference(candidates.columns)
-
-    if missing:
-        raise ValueError(f"Missing required columns: {sorted(missing)}")
-
-    if candidates.empty:
-        raise ValueError("Training dataset is empty")
-
-    if candidates["trip_id"].isnull().any():
-        raise ValueError("Training data contains missing trip IDs")
-
-    X, feature_columns = prepare_feature_matrix(candidates)
-    y = extract_labels(candidates)
-    groups = candidates["trip_id"].astype(str).to_numpy()
-
-    unique_groups = np.unique(groups)
-
-    if len(unique_groups) < 2:
-        raise ValueError("At least two distinct trips are required")
-
-    if len(np.unique(y)) != 2:
-        raise ValueError("Training requires both positive and negative labels")
-
-    splits = min(n_splits, len(unique_groups))
-    cv = GroupKFold(n_splits=splits)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(model, output_dir / f"{name}.joblib")
+    return metrics
 
-    results: List[Dict[str, Any]] = []
-    models = build_baseline_models()
 
-    for model_name, model in models.items():
-        fold_metrics = []
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--features", default="results/train_features_aligned.csv")
+    parser.add_argument("--out-dir", default="results/baseline_models")
+    parser.add_argument("--max-knn-rows", type=int, default=100000)
+    args = parser.parse_args()
 
-        print(f"\nTraining baseline: {model_name}")
+    all_frame = pd.read_csv(args.features, dtype={"trip_id": str})
+    has_positive = all_frame.groupby(
+        ["trip_id", "observation_index"]
+    )["label"].transform("max").eq(1)
+    eligible_frame = all_frame.loc[has_positive].copy()
+    eligible_frame["label"] = eligible_frame["label"].astype(int)
 
-        for fold, (train_idx, val_idx) in enumerate(
-            cv.split(X, y, groups),
-            start=1,
-        ):
-            if len(np.unique(y[train_idx])) < 2:
-                raise ValueError(
-                    f"{model_name}, fold {fold}: training fold "
-                    "contains only one class"
-                )
-
-            fold_model = clone(model)
-
-            fold_model.fit(X[train_idx], y[train_idx])
-
-            predictions = fold_model.predict(X[val_idx])
-
-            metrics = calculate_metrics(y[val_idx], predictions)
-            fold_metrics.append(metrics)
-
-            print(
-                f"  Fold {fold}/{splits}: "
-                f"Macro-F1={metrics['macro_f1']:.4f}"
-            )
-
-        mean_metrics = {
-            key: float(np.mean([fold[key] for fold in fold_metrics]))
-            for key in fold_metrics[0]
-        }
-
-        std_f1 = float(
-            np.std([fold["macro_f1"] for fold in fold_metrics])
-        )
-
-        # Refit the selected baseline candidates on all supplied
-        # training trips after cross-validation.
-        final_model = clone(model)
-        final_model.fit(X, y)
-
-        model_path = output_dir / f"{model_name}.joblib"
-        joblib.dump(final_model, model_path)
-
-        result = {
-            "model": model_name,
-            "cv_folds": splits,
-            "num_trips": int(len(unique_groups)),
-            "num_candidates": int(len(y)),
-            **mean_metrics,
-            "macro_f1_std": std_f1,
-            "artifact": str(model_path),
-        }
-
-        results.append(result)
-
-        print(
-            f"  Mean Macro-F1: {mean_metrics['macro_f1']:.4f} "
-            f"(+/- {std_f1:.4f})"
-        )
-
-    results_df = pd.DataFrame(results)
-    results_df = results_df.sort_values(
-        "macro_f1",
-        ascending=False,
-    ).reset_index(drop=True)
-
-    results_df.to_csv(
-        output_dir / "baseline_comparison.csv",
-        index=False,
+    logistic = make_pipeline(
+        SimpleImputer(strategy="median"),
+        StandardScaler(),
+        LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42),
+    )
+    knn = make_pipeline(
+        SimpleImputer(strategy="median"),
+        StandardScaler(),
+        KNeighborsClassifier(n_neighbors=5, weights="distance", n_jobs=-1),
     )
 
-    metadata = {
-        "feature_columns": feature_columns,
-        "num_features": len(feature_columns),
-        "num_training_trips": int(len(unique_groups)),
-        "num_candidates": int(len(y)),
-        "cv_strategy": "GroupKFold",
-        "cv_folds": splits,
-        "random_seed": 42,
-        "models": results,
-    }
+    results = [
+        evaluate_model("logistic_regression", logistic, eligible_frame, all_frame,
+                       args.out_dir),
+        evaluate_model("knn", knn, eligible_frame, all_frame, args.out_dir,
+                       max_knn_rows=args.max_knn_rows),
+    ]
 
-    with (output_dir / "baseline_metadata.json").open(
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(metadata, file, indent=4)
+    output_path = Path("results/baseline_metrics.csv")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result_frame = pd.DataFrame(results)
+    result_frame.to_csv(output_path, index=False)
+    print(result_frame.to_string(index=False))
+    print(f"Saved metrics to {output_path}")
 
-    print("\nBASELINE COMPARISON COMPLETE")
-    print(results_df.to_string(index=False))
 
-    return results_df
+if __name__ == "__main__":
+    main()

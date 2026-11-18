@@ -1,168 +1,82 @@
-
-"""Candidate-generation interface for the PathSnap project.
-
-Reuses the validated candidate-generation implementation from the MLP
-pipeline so that all models receive a consistent candidate table.
-"""
-
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
-
+import numpy as np
 import pandas as pd
+from scipy.spatial import cKDTree
 
-from ml.mlp.config import CandidateConfig
-from ml.mlp.data_adapter import extract_trip_candidates
+from .geo import point_segment_distances, project_trip
 
-from .data_loader import RawTrip, load_partition, load_raw_trip
+
+def road_segments(nodes, arcs, transformer):
+    """Convert arc rows into projected, directed road segments."""
+    node_x, node_y = transformer.transform(
+        nodes["longitude"].to_numpy(),
+        nodes["latitude"].to_numpy(),
+    )
+    node_xy = np.column_stack((node_x, node_y))
+
+    endpoints = arcs[["from_node_id", "to_node_id"]].to_numpy(dtype=int)
+
+    valid = (
+        (endpoints >= 0).all(axis=1)
+        & (endpoints < len(node_xy)).all(axis=1)
+    )
+
+    valid_arcs = arcs.loc[valid]
+    valid_endpoints = endpoints[valid]
+
+    arc_ids = valid_arcs["arc_id"].to_numpy(dtype=int)
+    segments_xy = node_xy[valid_endpoints]
+
+    return arc_ids, segments_xy
 
 
 def generate_candidates(
-    trip: RawTrip,
-    config: Optional[CandidateConfig] = None,
-    include_labels: bool = True,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """
-    Generate road-segment candidates for every GPS observation in a trip.
-
-    Args:
-        trip: Loaded PathSnap trip.
-        config: Candidate-generation configuration.
-        include_labels: Whether to attach ground-truth labels.
-
-    Returns:
-        A candidate-level DataFrame and a generation summary.
-    """
-
-    if config is None:
-        config = CandidateConfig()
-
-    candidates, summary = extract_trip_candidates(
-        trip,
-        cfg=config,
-        load_labels=include_labels,
+    track,
+    nodes,
+    arcs,
+    trip_id="",
+    k=40,
+    radius_m=100.0,
+):
+    """Return nearby candidate arcs for each GPS observation."""
+    gps_xy, transformer = project_trip(
+        track["longitude"],
+        track["latitude"],
     )
 
-    required_columns = {"trip_id", "obs_idx", "arc_id"}
+    arc_ids, segments_xy = road_segments(nodes, arcs, transformer)
 
-    missing = required_columns.difference(candidates.columns)
+    if len(arc_ids) == 0:
+        raise ValueError("This trip has no valid road arcs.")
 
-    if missing:
-        raise ValueError(
-            f"Candidate generator returned missing columns: {sorted(missing)}"
+    midpoints = segments_xy.mean(axis=1)
+    midpoint_tree = cKDTree(midpoints)
+
+    k = min(int(k), len(arc_ids))
+    rows = []
+
+    for observation_index, point_xy in enumerate(gps_xy):
+        _, nearby_indices = midpoint_tree.query(point_xy, k=k)
+        nearby_indices = np.atleast_1d(nearby_indices).astype(int)
+
+        distances = point_segment_distances(
+            point_xy,
+            segments_xy[nearby_indices],
         )
 
-    if candidates.empty:
-        raise ValueError(
-            f"No candidates generated for trip {trip.trip_id}"
-        )
+        within_radius = distances <= radius_m
 
-    if candidates[["trip_id", "obs_idx", "arc_id"]].isnull().any().any():
-        raise ValueError("Candidate output contains missing identifiers")
+        # Ensure each observation has at least one candidate.
+        if not within_radius.any():
+            within_radius[np.argmin(distances)] = True
 
-    if candidates.duplicated(["trip_id", "obs_idx", "arc_id"]).any():
-        raise ValueError("Duplicate candidate rows detected")
+        for local_index in np.flatnonzero(within_radius):
+            arc_position = nearby_indices[local_index]
 
-    return candidates, summary
+            rows.append({
+                "trip_id": str(trip_id),
+                "observation_index": observation_index,
+                "candidate_arc_id": int(arc_ids[arc_position]),
+                "distance_to_road_m": float(distances[local_index]),
+            })
 
-
-def generate_trip_candidates(
-    trip_dir: Path,
-    config: Optional[CandidateConfig] = None,
-    include_labels: bool = True,
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Load one trip and generate its candidate table."""
-
-    trip = load_raw_trip(
-        Path(trip_dir),
-        load_route=include_labels,
-    )
-
-    return generate_candidates(
-        trip,
-        config=config,
-        include_labels=include_labels,
-    )
-
-
-def generate_partition_candidates(
-    partition_dir: Path,
-    config: Optional[CandidateConfig] = None,
-    include_labels: bool = True,
-    strict: bool = True,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Generate and combine candidate tables for a complete partition.
-
-    Returns:
-        combined_candidates:
-            One row per observation-road-segment candidate.
-
-        trip_summaries:
-            One summary row per successfully processed trip.
-    """
-
-    trips = load_partition(
-        Path(partition_dir),
-        load_route=include_labels,
-        strict=strict,
-    )
-
-    candidate_tables: List[pd.DataFrame] = []
-    summaries: List[Dict[str, Any]] = []
-
-    for index, trip in enumerate(trips, start=1):
-        candidates, summary = generate_candidates(
-            trip,
-            config=config,
-            include_labels=include_labels,
-        )
-
-        candidate_tables.append(candidates)
-        summaries.append(dict(summary))
-
-        print(
-            f"[CANDIDATES] Processed {index}/{len(trips)} trips "
-            f"({trip.trip_id}): {len(candidates):,} candidate rows"
-        )
-
-    combined = pd.concat(
-        candidate_tables,
-        ignore_index=True,
-    )
-
-    summary_df = pd.DataFrame(summaries)
-
-    if combined.empty:
-        raise RuntimeError("Partition candidate generation produced no rows")
-
-    return combined, summary_df
-
-
-def save_candidates(
-    candidates: pd.DataFrame,
-    output_path: Path,
-) -> Path:
-    """Save candidate data as CSV or Parquet."""
-
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    suffix = output_path.suffix.lower()
-
-    if suffix == ".csv":
-        candidates.to_csv(output_path, index=False)
-
-    elif suffix in (".parquet", ".pq"):
-        candidates.to_parquet(output_path, index=False)
-
-    else:
-        raise ValueError(
-            f"Unsupported output format: {suffix}. "
-            "Use CSV or Parquet."
-        )
-
-    print(
-        f"[CANDIDATES] Saved {len(candidates):,} rows to {output_path}"
-    )
-
-    return output_path
+    return pd.DataFrame(rows)

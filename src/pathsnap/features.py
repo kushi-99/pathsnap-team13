@@ -1,145 +1,95 @@
-
-"""Feature schema and numerical preparation utilities for PathSnap."""
-
-from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
-
-import json
 import numpy as np
-import pandas as pd
 
-from ml.mlp.config import DEFAULT_FEATURE_COLUMNS
-
-
-def get_feature_columns(
-    schema_path: Optional[Path] = None,
-) -> List[str]:
-    """Return the canonical 28-feature schema."""
-
-    if schema_path is None:
-        return list(DEFAULT_FEATURE_COLUMNS)
-
-    schema_path = Path(schema_path)
-
-    if not schema_path.exists():
-        raise FileNotFoundError(f"Feature schema not found: {schema_path}")
-
-    with schema_path.open("r", encoding="utf-8") as file:
-        schema = json.load(file)
-
-    columns = schema.get("feature_columns")
-
-    if not isinstance(columns, list) or not columns:
-        raise ValueError("Invalid feature schema")
-
-    if len(columns) != len(set(columns)):
-        raise ValueError("Feature schema contains duplicate columns")
-
-    return columns
+from .candidates import road_segments
+from .geo import project_trip
 
 
-def validate_feature_frame(
-    candidates: pd.DataFrame,
-    feature_columns: Optional[Sequence[str]] = None,
-) -> pd.DataFrame:
-    """Validate that candidate data contains all required features."""
+FEATURE_COLUMNS = [
+    "distance_to_road_m",
+    "heading_difference_deg",
+    "speed_mps",
+    "time_gap_s",
+    "incoming_degree",
+    "outgoing_degree",
+]
 
-    if candidates.empty:
-        raise ValueError("Candidate DataFrame is empty")
 
-    columns = list(
-        feature_columns
-        if feature_columns is not None
-        else get_feature_columns()
+def build_features(track, nodes, arcs, candidates):
+    """Add GPS-motion and road-connectivity features to candidate rows."""
+    gps_xy, transformer = project_trip(
+        track["longitude"],
+        track["latitude"],
     )
 
-    missing = [column for column in columns if column not in candidates.columns]
+    # Movement from the previous GPS point to the current one.
+    movement = np.diff(gps_xy, axis=0, prepend=gps_xy[[0]])
+    step_distance_m = np.linalg.norm(movement, axis=1)
 
-    if missing:
-        raise ValueError(
-            f"Missing {len(missing)} required features: {missing}"
-        )
+    timestamps = track["timestamp_s"].to_numpy(dtype=float)
+    time_gap_s = np.diff(timestamps, prepend=np.nan)
+    time_gap_s[0] = np.nan
 
-    features = candidates.loc[:, columns].copy()
-
-    features = features.apply(pd.to_numeric, errors="coerce")
-
-    values = features.to_numpy(dtype=np.float64)
-
-    if not np.isfinite(values).all():
-        bad_columns = [
-            column
-            for column in columns
-            if not np.isfinite(
-                features[column].to_numpy(dtype=np.float64)
-            ).all()
-        ]
-
-        raise ValueError(
-            f"Non-finite values detected in features: {bad_columns}"
-        )
-
-    return features
-
-
-def prepare_feature_matrix(
-    candidates: pd.DataFrame,
-    feature_columns: Optional[Sequence[str]] = None,
-) -> Tuple[np.ndarray, List[str]]:
-    """
-    Convert candidate features into a model-ready float32 matrix.
-
-    Scaling is deliberately excluded. Fit StandardScaler only on the
-    training split to prevent data leakage.
-    """
-
-    features = validate_feature_frame(
-        candidates,
-        feature_columns=feature_columns,
+    speed_mps = np.full(len(track), np.nan)
+    valid_time_gap = np.isfinite(time_gap_s) & (time_gap_s > 0)
+    speed_mps[valid_time_gap] = (
+        step_distance_m[valid_time_gap] / time_gap_s[valid_time_gap]
     )
 
-    matrix = features.to_numpy(dtype=np.float32)
+    gps_heading_deg = (
+        np.degrees(np.arctan2(movement[:, 0], movement[:, 1])) % 360.0
+    )
+    gps_heading_deg[step_distance_m < 0.5] = np.nan
 
-    if not np.isfinite(matrix).all():
-        raise ValueError("Feature matrix contains NaN or Inf")
+    arc_ids, segments_xy = road_segments(nodes, arcs, transformer)
 
-    return matrix, list(features.columns)
+    road_heading_deg = (
+        np.degrees(
+            np.arctan2(
+                segments_xy[:, 1, 0] - segments_xy[:, 0, 0],
+                segments_xy[:, 1, 1] - segments_xy[:, 0, 1],
+            )
+        )
+        % 360.0
+    )
+    heading_by_arc = dict(zip(arc_ids.tolist(), road_heading_deg.tolist()))
 
+    incoming_degree = arcs.groupby("to_node_id").size().to_dict()
+    outgoing_degree = arcs.groupby("from_node_id").size().to_dict()
+    endpoints_by_arc = arcs.set_index("arc_id")[["from_node_id", "to_node_id"]]
 
-def add_feature_schema(
-    candidates: pd.DataFrame,
-    feature_columns: Optional[Sequence[str]] = None,
-) -> pd.DataFrame:
-    """Return a copy of candidates with validated feature columns."""
+    result = candidates.copy()
 
-    validate_feature_frame(candidates, feature_columns)
+    obs = result["observation_index"].to_numpy(dtype=int)
+    candidate_arcs = result["candidate_arc_id"].to_numpy(dtype=int)
 
-    return candidates.copy()
+    candidate_heading = np.array([
+        heading_by_arc.get(int(arc_id), np.nan)
+        for arc_id in candidate_arcs
+    ])
 
-
-def save_feature_schema(
-    output_path: Path,
-    feature_columns: Optional[Sequence[str]] = None,
-) -> Path:
-    """Save the canonical feature-column schema as JSON."""
-
-    columns = list(
-        feature_columns
-        if feature_columns is not None
-        else get_feature_columns()
+    heading_difference = np.abs(
+        (gps_heading_deg[obs] - candidate_heading + 180.0) % 360.0 - 180.0
     )
 
-    if not columns or len(columns) != len(set(columns)):
-        raise ValueError("Invalid feature column list")
+    from_nodes = np.array([
+        endpoints_by_arc.loc[int(arc_id), "from_node_id"]
+        for arc_id in candidate_arcs
+    ])
+    to_nodes = np.array([
+        endpoints_by_arc.loc[int(arc_id), "to_node_id"]
+        for arc_id in candidate_arcs
+    ])
 
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result["heading_difference_deg"] = heading_difference
+    result["speed_mps"] = speed_mps[obs]
+    result["time_gap_s"] = time_gap_s[obs]
+    result["incoming_degree"] = [
+        int(incoming_degree.get(int(node_id), 0))
+        for node_id in from_nodes
+    ]
+    result["outgoing_degree"] = [
+        int(outgoing_degree.get(int(node_id), 0))
+        for node_id in to_nodes
+    ]
 
-    with output_path.open("w", encoding="utf-8") as file:
-        json.dump(
-            {"feature_columns": columns},
-            file,
-            indent=4,
-        )
-
-    return output_path
+    return result
