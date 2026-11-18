@@ -1,30 +1,27 @@
-# Candidate feature table (starter contract)
+# Candidate feature table
 
-One row represents one GPS observation paired with one candidate directed road arc.
-The `.route` reference is kept separate from prediction features.
+One row represents one GPS observation paired with one candidate directed road arc. `.route` is used only to assign training/evaluation labels; it is not an input to candidate generation or prediction.
 
 | Column | Type | Role |
 |---|---|---|
-| `trip_id` | string | Metadata/group split only; never a model feature |
-| `observation_index` | integer | Metadata for grouping candidate rows by GPS point |
-| `candidate_arc_id` | integer | Road candidate being scored; metadata/target identity, not a numeric model feature |
-| `distance_to_road_m` | float | Perpendicular distance from GPS point to candidate road segment |
-| `heading_difference_deg` | float | Absolute wrapped difference between GPS movement heading and directed arc heading |
-| `speed_mps` | float | GPS step distance divided by positive timestamp gap |
-| `time_gap_s` | float | Time since preceding GPS observation |
-| `reference_arc_id` | integer | Provisional per-observation reference road, created from `.route` geometry |
-| `label` | integer 0/1 | 1 if candidate arc equals provisional reference arc, else 0 |
+| `trip_id` | string | Metadata for grouping/splitting; never a model input |
+| `observation_index` | integer | Metadata for grouping candidates by GPS point |
+| `candidate_arc_id` | integer | Road candidate identity; never a numeric model input |
+| `distance_to_road_m` | float | GPS-to-candidate segment distance in metres |
+| `heading_difference_deg` | float | Absolute wrapped GPS movement vs directed road heading difference |
+| `speed_mps` | float | GPS step distance divided by positive time gap |
+| `time_gap_s` | float | Seconds since the previous GPS point |
+| `incoming_degree` | integer | Number of arcs entering candidate arc's start node |
+| `outgoing_degree` | integer | Number of arcs leaving candidate arc's end node |
+| `reference_arc_id` | integer | Inferred reference road for the GPS point; supervision only |
+| `label` | integer 0/1 | 1 if candidate arc equals the inferred reference arc, otherwise 0 |
 
-## Provisional label rule: validate before reporting
+The six model input columns are `distance_to_road_m`, `heading_difference_deg`, `speed_mps`, `time_gap_s`, `incoming_degree`, and `outgoing_degree`. The model pipeline imputes missing feature values. Do not pass identifiers or `reference_arc_id`/`label` into the model.
 
-The supplied `.route` file is an ordered sequence of `arc_id` values, not a pointwise
-label file. The starter code assigns each GPS point the closest arc geometry from that
-route, then enforces nondecreasing positions in the route sequence. This is a transparent
-initial alignment heuristic, not a guarantee of exact ground truth. Inspect mapped
-training trips and document limitations before finalizing it.
+## Route alignment and limits
 
-The candidate generator does not use `.route`; labels are attached afterward. Report
-candidate miss rate: the fraction of GPS observations for which no generated candidate
-matches the provisional reference arc. Do not use `reference_arc_id`, `label`, `trip_id`,
-or row identifiers as numeric model inputs. The starter models use only the four numeric
-features listed above.
+The `.route` file is an ordered sequence of `arc_id` values, not a pointwise GPS label file. `labels.py` assigns GPS observations to route positions using point-to-segment distance and a forward-only dynamic program that discourages large jumps. This is an inferred alignment and must not be presented as independently verified ground truth.
+
+`results/label_alignment_quality.csv` records route distance and candidate coverage by trip. Trips `00000054` and `00000033` have median assigned-road distances of roughly 140 m and 122 m, respectively, and are flagged as route/GPS inconsistencies. The student-test partition has much smaller route distances overall. Discuss these anomalies and the candidate miss rate when presenting results.
+
+Candidate miss rate means the fraction of GPS observations for which the generated candidate set does not contain the inferred reference arc. The candidate generator does not read `.route`; labels are attached afterward.

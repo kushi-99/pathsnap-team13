@@ -1,0 +1,3 @@
+model,validation_trips,validation_observations,candidate_miss_rate,observation_top1_all_observations,observation_top1_when_reference_candidate_present
+logistic_regression,16,39460,0.023162696401419214,0.7281297516472377,0.745395112333316
+knn,16,39460,0.023162696401419214,0.6457932083122149,0.6611062107611685
