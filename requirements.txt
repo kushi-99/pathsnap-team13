@@ -1,3 +1,8 @@
+fastapi
+uvicorn[standard]
+streamlit
+requests
+pydeck
 numpy
 pandas
 scikit-learn

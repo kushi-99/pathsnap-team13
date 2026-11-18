@@ -1,5 +1,6 @@
 """Render the data-foundation report from measured project outputs."""
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -16,10 +17,19 @@ FEATURE_DETAILS = {
 
 
 def _metric_table(metrics):
-    rows = ["| Model | Candidate accuracy | Macro F1 | Log loss | Top-1 covered | Top-1 all | Fit (s) | Inference (s) |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    rows = ["| Model | Selected parameters | Candidate accuracy | Macro F1 | Log loss | Top-1 covered | Top-1 all | Fit (s) | Inference (s) |", "|---|---|---:|---:|---:|---:|---:|---:|---:|"]
     for row in metrics.itertuples():
+        parameters = json.loads(getattr(row, "parameters", "{}"))
+        if row.model == "logistic_regression":
+            selected = f"C={parameters.get('C', 'unknown')}"
+        else:
+            selected = (
+                f"k={parameters.get('n_neighbors', 'unknown')}, "
+                f"weights={parameters.get('weights', 'unknown')}"
+            )
         rows.append(
-            f"| {row.model} | {row.candidate_accuracy_on_covered_observations:.4f} | "
+            f"| {row.model} | {selected} | "
+            f"{row.candidate_accuracy_on_covered_observations:.4f} | "
             f"{row.candidate_macro_f1_on_covered_observations:.4f} | "
             f"{row.candidate_log_loss_on_covered_observations:.4f} | "
             f"{row.observation_top1_accuracy_when_reference_candidate_present:.4f} | "
@@ -35,6 +45,11 @@ def build_report(results_dir):
     feature = pd.read_csv(results_dir / "feature_validation_report.csv")
     table_summary = pd.read_csv(results_dir / "feature_table_validation_summary.csv")
     baseline = pd.read_csv(results_dir / "baseline_metrics.csv")
+    logistic_metrics = baseline.loc[baseline.model == "logistic_regression"].iloc[0]
+    knn_metrics = baseline.loc[baseline.model == "knn"].iloc[0]
+    logistic_parameters = json.loads(logistic_metrics.parameters)
+    knn_parameters = json.loads(knn_metrics.parameters)
+    knn_row_cap = int(knn_metrics.fit_rows)
     candidate_trips = pd.read_csv(results_dir / "candidate_trip_validation_train.csv", dtype={"trip_id": str})
     alignment_path = results_dir / "label_alignment_quality.csv"
     feature_lines = ["| Feature | Meaning | Unit | Train range | Train missing | Student-test missing | Negative values | Limitation |", "|---|---|---|---:|---:|---:|---:|---|"]
@@ -122,11 +137,11 @@ They remain in the data and are documented as source/label-quality limitations. 
 
 ## Baseline models and evaluation
 
-Both models use the same six features, median imputation, and standard scaling. Logistic Regression uses class balancing and all eligible training rows. KNN uses 5 neighbors with distance weighting and a reproducible balanced training sample capped at 100,000 candidate rows, so its fit data differ in size from Logistic Regression. The recorded evaluation uses a fixed 80/20 GroupShuffleSplit by trip (random state 42; 64 training trips and 16 validation trips). No trip appears in both partitions. Candidate classification metrics are computed on observations containing at least one inferred reference candidate. Covered-observation Top-1 is reported separately from all-observation Top-1, where missed reference candidates count as incorrect.
+Both models use the same six features, median imputation, and standard scaling. Logistic Regression uses class balancing with selected regularization C={logistic_parameters["C"]}. KNN uses {knn_parameters["n_neighbors"]} neighbors with {knn_parameters["weights"]} weighting and a reproducible balanced training sample capped at {knn_row_cap:,} candidate rows, so its fit data differ in size from Logistic Regression. The recorded evaluation uses a fixed 80/20 GroupShuffleSplit by trip (random state 42; 64 training trips and 16 validation trips). No trip appears in both partitions. Candidate classification metrics are computed on observations containing at least one inferred reference candidate. Covered-observation Top-1 is reported separately from all-observation Top-1, where missed reference candidates count as incorrect.
 
 {_metric_table(baseline)}
 
-Metrics and exact validation trip IDs are in [baseline_metrics.csv](baseline_metrics.csv). Logistic Regression has higher all-observation Top-1 and lower log loss in this run. KNN has higher candidate Macro F1 and takes longer to score the holdout.
+Metrics and exact validation trip IDs are in [baseline_metrics.csv](baseline_metrics.csv). The tuning search is recorded in [hyperparameter_tuning.csv](hyperparameter_tuning.csv). Logistic Regression has higher all-observation Top-1 and lower log loss in this run. KNN has higher candidate Macro F1 and takes longer to score the holdout.
 
 ## EDA and maps
 
@@ -147,7 +162,7 @@ The network display is deterministically thinned to at most 1,500 arcs. All coor
 
 ## Limitations and conclusion
 
-The route-to-GPS labels are inferred; candidate generation may omit a reference arc; GPS gaps can create extreme speed values; only 80 labeled training trips are available; and the baseline comparison is one trip-grouped holdout. KNN's balanced 100,000-row cap also means its training sample differs from Logistic Regression's. These limits should accompany performance claims. The validated feature schema, preserved missing values, trip-level checks, measured baselines, figures, and maps provide a reproducible foundation for the team's route-reconstruction and deployment work.
+The route-to-GPS labels are inferred; candidate generation may omit a reference arc; GPS gaps can create extreme speed values; only 80 labeled training trips are available; and the baseline comparison is one trip-grouped holdout. KNN's balanced {knn_row_cap:,}-row cap also means its training sample differs from Logistic Regression's. These limits should accompany performance claims. The validated feature schema, preserved missing values, trip-level checks, measured baselines, figures, and maps provide a reproducible foundation for the team's route-reconstruction and deployment work.
 '''
     (results_dir / "data_foundation_report.md").write_text(report, encoding="utf-8")
     summary = f"""# Review 2 speaking summary — Kushi Niranjana

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>PathSnap · GPS map matching</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <header><div class="brand">PathSnap</div><span>GPS map matching</span></header>
+    <main>
+      <aside>
+        <h1>Score a trip</h1>
+        <p>Compare GPS observations with nearby road candidates.</p>
+        <label>Backend address
+          <input id="api-url" type="url" placeholder="http://192.168.1.10:8000" autocomplete="url">
+        </label>
+        <label>Trip<select id="trip"></select></label>
+        <label>Model
+          <select id="model">
+            <option value="logistic_regression">Logistic Regression (recommended)</option>
+            <option value="knn">KNN (slower)</option>
+          </select>
+        </label>
+        <button id="run">Score trip</button>
+        <p id="status" role="status">Enter the backend address to load trips.</p>
+        <div id="stats"></div>
+        <div id="evaluation"></div>
+        <div id="rows"></div>
+      </aside>
+      <section id="map" aria-label="Trip map"></section>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

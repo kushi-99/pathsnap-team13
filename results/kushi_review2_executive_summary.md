@@ -6,9 +6,9 @@ Candidate labels come from inferred alignment to an ordered reference route. Tri
 
 On the same trip-grouped 80/20 holdout, the models gave these results.
 
-| Model | Candidate accuracy | Macro F1 | Log loss | Top-1 covered | Top-1 all | Fit (s) | Inference (s) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| logistic_regression | 0.8647 | 0.6802 | 0.2728 | 0.7458 | 0.7285 | 8.23 | 0.84 |
-| knn | 0.8880 | 0.7057 | 1.5288 | 0.6508 | 0.6357 | 0.32 | 94.27 |
+| Model | Selected parameters | Candidate accuracy | Macro F1 | Log loss | Top-1 covered | Top-1 all | Fit (s) | Inference (s) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic_regression | C=0.1 | 0.8646 | 0.6802 | 0.2728 | 0.7458 | 0.7285 | 12.36 | 1.20 |
+| knn | k=9, weights=uniform | 0.8787 | 0.6961 | 1.0094 | 0.6697 | 0.6542 | 0.19 | 63.70 |
 
 [Technical report](data_foundation_report.md) · [Full metrics](baseline_metrics.csv) · [Validation summary](feature_table_validation_summary.csv)

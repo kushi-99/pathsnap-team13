@@ -1,4 +1,5 @@
 import argparse
+import json
 import time
 from pathlib import Path
 
@@ -35,14 +36,99 @@ def balanced_training_sample(frame, max_rows, random_state=42):
     return frame.iloc[np.sort(np.asarray(chosen, dtype=int))]
 
 
+def grouped_train_validation_split(frame, random_state=42):
+    groups = frame["trip_id"].astype(str)
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=random_state)
+    return next(splitter.split(frame[FEATURE_COLUMNS], frame["label"], groups))
+
+
+def top1_accuracy(model, frame):
+    scored = frame[["trip_id", "observation_index", "candidate_arc_id", "reference_arc_id"]].copy()
+    scored["score"] = model.predict_proba(frame[FEATURE_COLUMNS])[:, 1]
+    top = scored.loc[
+        scored.groupby(["trip_id", "observation_index"])["score"].idxmax()
+    ]
+    return float((top["candidate_arc_id"] == top["reference_arc_id"]).mean())
+
+
+def tune_hyperparameters(eligible_frame, max_knn_rows, max_observations):
+    """Tune on a trip-grouped inner split, leaving the final holdout untouched."""
+    outer_train_idx, _ = grouped_train_validation_split(eligible_frame)
+    outer_train = eligible_frame.iloc[outer_train_idx]
+    inner_train_idx, inner_validation_idx = grouped_train_validation_split(
+        outer_train, random_state=43
+    )
+    inner_train = outer_train.iloc[inner_train_idx]
+    inner_validation = outer_train.iloc[inner_validation_idx]
+
+    observations = inner_validation[
+        ["trip_id", "observation_index"]
+    ].drop_duplicates()
+    if len(observations) > max_observations:
+        observations = observations.sample(
+            n=max_observations, random_state=42
+        )
+    tuning_frame = inner_validation.merge(
+        observations, on=["trip_id", "observation_index"], how="inner"
+    )
+
+    results = []
+    best = {}
+
+    for regularization in (0.1, 1.0, 10.0):
+        parameters = {"C": regularization}
+        model = make_pipeline(
+            SimpleImputer(strategy="median"),
+            StandardScaler(),
+            LogisticRegression(
+                max_iter=1000,
+                class_weight="balanced",
+                random_state=42,
+                C=regularization,
+            ),
+        )
+        model.fit(inner_train[FEATURE_COLUMNS], inner_train["label"].astype(int))
+        accuracy = top1_accuracy(model, tuning_frame)
+        results.append({
+            "model": "logistic_regression",
+            "parameters": json.dumps(parameters, sort_keys=True),
+            "top1_accuracy": accuracy,
+            "training_rows": len(inner_train),
+            "tuning_observations": len(observations),
+        })
+        if "logistic_regression" not in best or accuracy > best["logistic_regression"][0]:
+            best["logistic_regression"] = (accuracy, parameters)
+
+    knn_train = balanced_training_sample(inner_train, max_knn_rows)
+    for neighbors in (3, 5, 9):
+        for weights in ("uniform", "distance"):
+            parameters = {"n_neighbors": neighbors, "weights": weights}
+            model = make_pipeline(
+                SimpleImputer(strategy="median"),
+                StandardScaler(),
+                KNeighborsClassifier(
+                    n_neighbors=neighbors, weights=weights, n_jobs=-1
+                ),
+            )
+            model.fit(knn_train[FEATURE_COLUMNS], knn_train["label"].astype(int))
+            accuracy = top1_accuracy(model, tuning_frame)
+            results.append({
+                "model": "knn",
+                "parameters": json.dumps(parameters, sort_keys=True),
+                "top1_accuracy": accuracy,
+                "training_rows": len(knn_train),
+                "tuning_observations": len(observations),
+            })
+            if "knn" not in best or accuracy > best["knn"][0]:
+                best["knn"] = (accuracy, parameters)
+
+    return best, pd.DataFrame(results)
+
+
 def evaluate_model(name, model, eligible_frame, all_frame, output_dir,
                    max_knn_rows=None):
     """Use one trip-grouped split; score candidates and all route observations."""
-    groups = eligible_frame["trip_id"].astype(str)
-    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-    train_idx, validation_idx = next(
-        splitter.split(eligible_frame[FEATURE_COLUMNS], eligible_frame["label"], groups)
-    )
+    train_idx, validation_idx = grouped_train_validation_split(eligible_frame)
 
     train_frame = eligible_frame.iloc[train_idx]
     validation_frame = eligible_frame.iloc[validation_idx]
@@ -89,6 +175,12 @@ def evaluate_model(name, model, eligible_frame, all_frame, output_dir,
 
     metrics = {
         "model": name,
+        "parameters": json.dumps(
+            model.named_steps[
+                "logisticregression" if name == "logistic_regression" else "kneighborsclassifier"
+            ].get_params(),
+            sort_keys=True,
+        ),
         "candidate_accuracy_on_covered_observations": accuracy_score(y_true, covered_pred),
         "candidate_macro_f1_on_covered_observations": f1_score(
             y_true, covered_pred, average="macro", zero_division=0
@@ -125,8 +217,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--features", default="results/train_features_aligned.csv")
     parser.add_argument("--out-dir", default="results/baseline_models")
-    parser.add_argument("--max-knn-rows", type=int, default=100000)
+    parser.add_argument("--max-knn-rows", type=int, default=25000)
+    parser.add_argument("--tuning-knn-rows", type=int, default=25000)
+    parser.add_argument("--tuning-observations", type=int, default=250)
     args = parser.parse_args()
+
+    if (
+        args.max_knn_rows < 10
+        or args.tuning_knn_rows < 10
+        or args.tuning_observations < 1
+    ):
+        parser.error(
+            "KNN row limits must be at least 10 and tuning observations must be positive."
+        )
 
     all_frame = pd.read_csv(args.features, dtype={"trip_id": str})
     has_positive = all_frame.groupby(
@@ -135,15 +238,33 @@ def main():
     eligible_frame = all_frame.loc[has_positive].copy()
     eligible_frame["label"] = eligible_frame["label"].astype(int)
 
+    best_parameters, tuning_results = tune_hyperparameters(
+        eligible_frame, args.tuning_knn_rows, args.tuning_observations
+    )
+    tuning_path = Path("results/hyperparameter_tuning.csv")
+    tuning_path.parent.mkdir(parents=True, exist_ok=True)
+    tuning_results.to_csv(tuning_path, index=False)
+    print("Selected parameters (inner trip-grouped holdout):")
+    for name, (accuracy, parameters) in best_parameters.items():
+        print(f"  {name}: {parameters}, top-1={accuracy:.4f}")
+    print(f"Saved tuning results to {tuning_path}")
+
     logistic = make_pipeline(
         SimpleImputer(strategy="median"),
         StandardScaler(),
-        LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42),
+        LogisticRegression(
+            max_iter=1000,
+            class_weight="balanced",
+            random_state=42,
+            **best_parameters["logistic_regression"][1],
+        ),
     )
     knn = make_pipeline(
         SimpleImputer(strategy="median"),
         StandardScaler(),
-        KNeighborsClassifier(n_neighbors=5, weights="distance", n_jobs=-1),
+        KNeighborsClassifier(
+            n_jobs=-1, **best_parameters["knn"][1]
+        ),
     )
 
     results = [

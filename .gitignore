@@ -2,3 +2,7 @@ data/
 .venv/
 __pycache__/
 *.py[cod]
+results/train_features.csv
+results/student_test_features.csv
+results/train_features_quick.csv
+results/figures/supporting/

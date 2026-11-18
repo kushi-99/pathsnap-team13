@@ -1,0 +1,10 @@
+model,parameters,top1_accuracy,training_rows,tuning_observations
+logistic_regression,"{""C"": 0.1}",0.74,2074119,250
+logistic_regression,"{""C"": 1.0}",0.74,2074119,250
+logistic_regression,"{""C"": 10.0}",0.74,2074119,250
+knn,"{""n_neighbors"": 3, ""weights"": ""uniform""}",0.624,25000,250
+knn,"{""n_neighbors"": 3, ""weights"": ""distance""}",0.604,25000,250
+knn,"{""n_neighbors"": 5, ""weights"": ""uniform""}",0.636,25000,250
+knn,"{""n_neighbors"": 5, ""weights"": ""distance""}",0.628,25000,250
+knn,"{""n_neighbors"": 9, ""weights"": ""uniform""}",0.644,25000,250
+knn,"{""n_neighbors"": 9, ""weights"": ""distance""}",0.628,25000,250

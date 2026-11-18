@@ -47,14 +47,14 @@ They remain in the data and are documented as source/label-quality limitations. 
 
 ## Baseline models and evaluation
 
-Both models use the same six features, median imputation, and standard scaling. Logistic Regression uses class balancing and all eligible training rows. KNN uses 5 neighbors with distance weighting and a reproducible balanced training sample capped at 100,000 candidate rows, so its fit data differ in size from Logistic Regression. The recorded evaluation uses a fixed 80/20 GroupShuffleSplit by trip (random state 42; 64 training trips and 16 validation trips). No trip appears in both partitions. Candidate classification metrics are computed on observations containing at least one inferred reference candidate. Covered-observation Top-1 is reported separately from all-observation Top-1, where missed reference candidates count as incorrect.
+Both models use the same six features, median imputation, and standard scaling. Logistic Regression uses class balancing with selected regularization C=0.1. KNN uses 9 neighbors with uniform weighting and a reproducible balanced training sample capped at 25,000 candidate rows, so its fit data differ in size from Logistic Regression. The recorded evaluation uses a fixed 80/20 GroupShuffleSplit by trip (random state 42; 64 training trips and 16 validation trips). No trip appears in both partitions. Candidate classification metrics are computed on observations containing at least one inferred reference candidate. Covered-observation Top-1 is reported separately from all-observation Top-1, where missed reference candidates count as incorrect.
 
-| Model | Candidate accuracy | Macro F1 | Log loss | Top-1 covered | Top-1 all | Fit (s) | Inference (s) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| logistic_regression | 0.8647 | 0.6802 | 0.2728 | 0.7458 | 0.7285 | 8.23 | 0.84 |
-| knn | 0.8880 | 0.7057 | 1.5288 | 0.6508 | 0.6357 | 0.32 | 94.27 |
+| Model | Selected parameters | Candidate accuracy | Macro F1 | Log loss | Top-1 covered | Top-1 all | Fit (s) | Inference (s) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| logistic_regression | C=0.1 | 0.8646 | 0.6802 | 0.2728 | 0.7458 | 0.7285 | 12.36 | 1.20 |
+| knn | k=9, weights=uniform | 0.8787 | 0.6961 | 1.0094 | 0.6697 | 0.6542 | 0.19 | 63.70 |
 
-Metrics and exact validation trip IDs are in [baseline_metrics.csv](baseline_metrics.csv). Logistic Regression has higher all-observation Top-1 and lower log loss in this run. KNN has higher candidate Macro F1 and takes longer to score the holdout.
+Metrics and exact validation trip IDs are in [baseline_metrics.csv](baseline_metrics.csv). The tuning search is recorded in [hyperparameter_tuning.csv](hyperparameter_tuning.csv). Logistic Regression has higher all-observation Top-1 and lower log loss in this run. KNN has higher candidate Macro F1 and takes longer to score the holdout.
 
 ## EDA and maps
 
@@ -80,4 +80,4 @@ The network display is deterministically thinned to at most 1,500 arcs. All coor
 
 ## Limitations and conclusion
 
-The route-to-GPS labels are inferred; candidate generation may omit a reference arc; GPS gaps can create extreme speed values; only 80 labeled training trips are available; and the baseline comparison is one trip-grouped holdout. KNN's balanced 100,000-row cap also means its training sample differs from Logistic Regression's. These limits should accompany performance claims. The validated feature schema, preserved missing values, trip-level checks, measured baselines, figures, and maps provide a reproducible foundation for the team's route-reconstruction and deployment work.
+The route-to-GPS labels are inferred; candidate generation may omit a reference arc; GPS gaps can create extreme speed values; only 80 labeled training trips are available; and the baseline comparison is one trip-grouped holdout. KNN's balanced 25,000-row cap also means its training sample differs from Logistic Regression's. These limits should accompany performance claims. The validated feature schema, preserved missing values, trip-level checks, measured baselines, figures, and maps provide a reproducible foundation for the team's route-reconstruction and deployment work.
