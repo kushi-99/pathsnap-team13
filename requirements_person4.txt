@@ -1,4 +1,4 @@
-# Person 4 (PathSnap MLP Baseline, Evaluation, FastAPI Integration & Evaluator UI)
+# Person 4 — MLP Baseline, Evaluation, FastAPI Integration, Evaluator UI & Technical Report
 numpy==2.3.2
 pandas==2.3.1
 scipy==1.17.1
@@ -13,3 +13,5 @@ fastapi==0.163.2
 uvicorn==0.54.0
 pydantic==2.14.3
 requests==2.32.5
+reportlab==5.1.0
+pytest==8.3.5
