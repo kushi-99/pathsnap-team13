@@ -2,3 +2,5 @@ data/
 .venv/
 __pycache__/
 *.py[cod]
+# Generated datasets and model artifacts
+results/
