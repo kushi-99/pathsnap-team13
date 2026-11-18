@@ -1,0 +1,3 @@
+split,rows,trip_count,label_0_rows,label_1_rows,invalid_label_rows,label_arc_alignment_mismatches,missing_identifier_rows,feature_schemas_match
+train,3624101,80,3439412,184689,0,0,0,True
+student_test,420442,10,401585,18857,0,0,0,True
